@@ -262,7 +262,6 @@ def test_overlapping_special_tokens():
 
     ids = tokenizer.encode(test_string)
     tokenized_string = [tokenizer.decode([x]) for x in ids]
-    breakpoint()
     # Ensure the double <|endoftext|><|endoftext|> is preserved as a single token
     assert tokenized_string.count("<|endoftext|>") == 1
     assert tokenized_string.count("<|endoftext|><|endoftext|>") == 1

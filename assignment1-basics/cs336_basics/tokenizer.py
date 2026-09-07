@@ -12,73 +12,92 @@ class Tokenizer:
         self.special_token_to_id: dict[str, int] = {
             s: self.vocab_size + i for i, s in enumerate(self.special_tokens)
         }
+
+        # 1. 预计算反向词表和 BPE 优先级字典，避免在循环中重复构造
+        self.word_to_wid: dict[bytes, int] = {
+            w: wid for wid, w in self.vocab.items()}
+        self.bpe_ranks: dict[tuple[bytes, bytes], int] = {
+            pair: i for i, pair in enumerate(self.merges)}
+
         if self.special_tokens:
             self.delimiter_pattern = regex.compile(
                 f"({'|'.join(regex.escape(s) for s in sorted(self.special_tokens, key=len, reverse=True))})"
             )
         else:
             self.delimiter_pattern = None
+
         self.pretoken_pattern = regex.compile(
             r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
         )
 
-    def from_files(cls, vocab_filepath: str, merges_filepath: str, special_tokens: list[str] | None = None):
-        # vocab: json
-        with open(vocab_filepath, "r", encoding="utf-8") as f:
-            raw_vocab = json.load(f)
-        vocab: dict[int, bytes] = {
-            int(v): k.encode("utf-8")
-            for k, v in raw_vocab.items()
-        }
-        # merges: txt
-        with open(merges_filepath, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip()
-                     and not line.startswith("#")]
-        merges: list[tuple[bytes, bytes]] = [
-            (line[0].encode("utf-8"), line[1].encode("utf-8"))
-            for line in lines
-        ]
-        return cls(vocab, merges, special_tokens)
+    def _bpe(self, piece: bytes) -> list[bytes]:
+        """使用 BPE Rank 查找，仅合并当前 piece 中存在的相邻字节对"""
+        parts = [bytes([b]) for b in piece]
+        if len(parts) <= 1:
+            return parts
+
+        while True:
+            # 找到当前所有相邻 pair 中 rank 最小（优先级最高）的一个
+            min_pair = None
+            min_rank = float("inf")
+            for i in range(len(parts) - 1):
+                pair = (parts[i], parts[i + 1])
+                rank = self.bpe_ranks.get(pair, float("inf"))
+                if rank < min_rank:
+                    min_rank = rank
+                    min_pair = pair
+
+            # 如果没有可以合并的 pair，说明合并完成
+            if min_pair is None or min_rank == float("inf"):
+                break
+
+            # 执行该 pair 的合并
+            new_parts = []
+            i = 0
+            while i < len(parts):
+                if i < len(parts) - 1 and (parts[i], parts[i + 1]) == min_pair:
+                    new_parts.append(min_pair[0] + min_pair[1])
+                    i += 2
+                else:
+                    new_parts.append(parts[i])
+                    i += 1
+            parts = new_parts
+
+            if len(parts) <= 1:
+                break
+
+        return parts
 
     def encode(self, text: str) -> list[int]:
-        # 1. pre-tokenize
-        if self.special_tokens:
-            text_parts = self.delimiter_pattern.split(text)
-        else:
-            text_parts = [text]
+        return list(self.encode_generator(text))
 
-        # 2. apply merges
-        word_to_wid: dict[bytes, int] = {
-            w: wid for wid, w in self.vocab.items()}
-        tokenid_list: list[int] = []
+    def encode_generator(self, text: str) -> Iterator[int]:
+        """流式产出 token ID，不占用额外大内存"""
+        if not text:
+            return
+
+        # 1. 拆分 special tokens
+        text_parts = self.delimiter_pattern.split(
+            text) if self.delimiter_pattern else [text]
+
         for text_part in text_parts:
             if not text_part:
                 continue
             if text_part in self.special_tokens:
-                tokenid_list.append(self.special_token_to_id[text_part])
+                yield self.special_token_to_id[text_part]
                 continue
+
+            # 2. 正则 pre-token 遍历
             for match in self.pretoken_pattern.finditer(text_part):
-                old_pretoken: list[bytes] = [bytes([b])
-                                             for b in match.group().encode("utf-8")]
-                new_pretoken: list[bytes] = []
-                for merge in self.merges:
-                    new_pretoken = []
-                    i = 0
-                    while i < len(old_pretoken):
-                        if i + 1 < len(old_pretoken) and (old_pretoken[i], old_pretoken[i + 1]) == merge:
-                            new_pretoken.append(merge[0] + merge[1])
-                            i += 2
-                        else:
-                            new_pretoken.append(old_pretoken[i])
-                            i += 1
-                    old_pretoken = new_pretoken
-                for w in new_pretoken:
-                    tokenid_list.append(word_to_wid[w])
-        return tokenid_list
+                piece = match.group().encode("utf-8")
+                # 3. 运行高效 BPE 合并并即时输出 ID
+                for subword in self._bpe(piece):
+                    yield self.word_to_wid[subword]
 
     def encode_iterable(self, iterable: Iterable[str]) -> Iterator[int]:
+        """逐行/逐块流式生成，稳定控制内存 < 1MB"""
         for chunk in iterable:
-            yield from self.encode(chunk)
+            yield from self.encode_generator(chunk)
 
     def decode(self, ids: list[int]) -> str:
         raw_text = b""
