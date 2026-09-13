@@ -451,6 +451,8 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
+    from cs336_basics.softmax import softmax
+    return softmax(in_features, dim)
     raise NotImplementedError
 
 
