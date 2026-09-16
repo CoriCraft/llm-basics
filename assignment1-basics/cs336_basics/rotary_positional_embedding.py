@@ -36,8 +36,20 @@ class RotaryPositionalEmbedding(nn.Module):
         return x_rot
 
     def forward(self, x: torch.Tensor, token_positions: torch.Tensor) -> torch.Tensor:
+        # 1. 索引获取 cos 和 sin
+        # 如果 token_positions 形状是 (seq_len,) -> (seq_len, d_k)
+        # 如果 token_positions 形状是 (batch, seq_len) -> (batch, seq_len, d_k)
         cos = self.cos[token_positions]
         sin = self.sin[token_positions]
-        return einx.multiply("... sequence_length d_k, sequence_length d_k -> ... sequence_length d_k",
-                             x, cos) + einx.multiply("... sequence_length d_k, sequence_length d_k -> ... sequence_length d_k",
-                                                     self._rotate_adjacent(x), sin)
+
+        # 2. 如果 cos 是 (batch, seq_len, d_k)，需要在倒数第 2 维增加 head 维度 (unsqueeze(-2))
+        # 变成 (batch, 1, seq_len, d_k)，这样才能与 (batch, num_heads, seq_len, d_k) 正确广播
+        if cos.ndim == x.ndim - 1:
+            cos = cos.unsqueeze(-3)  # 对应 num_heads 所在的倒数第 3 维
+            sin = sin.unsqueeze(-3)
+        elif cos.ndim < x.ndim:
+            # 如果是 1D positions 索引出来的 (seq_len, d_k)，直接让它从后往前对齐广播
+            pass
+
+        # 3. 直接使用 PyTorch 原生广播乘法（比 einx 写固定模式更具通用性且不会因维度增减崩溃）
+        return (x * cos) + (self._rotate_adjacent(x) * sin)
