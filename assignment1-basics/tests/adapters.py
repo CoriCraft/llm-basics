@@ -89,7 +89,8 @@ def run_swiglu(
     # swiglu.w2.weight.data = w2_weight
     # swiglu.w3.weight.data = w3_weight
     from cs336_basics.positionwise_feedforward import SwiGLU
-    swiglu = SwiGLU(d_model, d_ff, in_features.device, in_features.dtype)
+    swiglu = SwiGLU(d_model, d_ff, device=in_features.device,
+                    dtype=in_features.dtype)
     weight_dict = {
         "w1.weight": w1_weight,
         "w2.weight": w2_weight,
@@ -97,7 +98,6 @@ def run_swiglu(
     }
     swiglu.load_state_dict(weight_dict)
     return swiglu(in_features)
-    raise NotImplementedError
 
 
 def run_scaled_dot_product_attention(
@@ -498,7 +498,7 @@ def run_rmsnorm(
         RMSNorm of the `in_features`.
     """
     from cs336_basics.rmsnorm import RMSNorm
-    rmsnorm = RMSNorm(d_model, eps, weights.device, weights.dtype)
+    rmsnorm = RMSNorm(d_model, eps, device=weights.device, dtype=weights.dtype)
     rmsnorm.weight = torch.nn.Parameter(weights)
     return rmsnorm(in_features)
 
