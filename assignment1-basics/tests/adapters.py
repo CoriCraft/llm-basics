@@ -29,7 +29,8 @@ def run_linear(
         Float[Tensor, "... d_out"]: The transformed output of your linear module.
     """
     from cs336_basics.linear import Linear
-    linear = Linear(d_in, d_out, weights.device, weights.dtype)
+    linear = Linear(in_features=d_in, out_features=d_out,
+                    device=weights.device, dtype=weights.dtype)
     linear.weight = torch.nn.Parameter(weights)
     return linear(in_features)
 
@@ -54,7 +55,7 @@ def run_embedding(
     """
     from cs336_basics.embedding import Embedding
     embedding = Embedding(vocab_size, d_model, weights.device, weights.dtype)
-    embedding.embedding_weight = torch.nn.Parameter(weights)
+    embedding.weight = torch.nn.Parameter(weights)
     return embedding(token_ids)
 
 

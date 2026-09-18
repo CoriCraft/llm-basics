@@ -5,13 +5,12 @@ import einx
 
 
 class Linear(nn.Module):
-    def __init__(self, in_features: int, out_features: int, device: torch.device | None = None, dtype: torch.dtype | None = None):
+    def __init__(self, in_features: int, out_features: int, *, device: torch.device | None = None, dtype: torch.dtype | None = None):
         super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
+        factory_kwargs = {"device": device, "dtype": dtype}
         self.weight = nn.Parameter(
             torch.empty((out_features, in_features),
-                        device=device, dtype=dtype)
+                        **factory_kwargs)
         )
         std = math.sqrt(2 / (in_features + out_features))
         nn.init.trunc_normal_(
@@ -23,4 +22,4 @@ class Linear(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return einx.dot("out_features in_features, ... in_features -> ... out_features", self.weight, x, in_features=self.in_features, out_features=self.out_features)
+        return einx.dot("out_features in_features, ... in_features -> ... out_features", self.weight, x)
