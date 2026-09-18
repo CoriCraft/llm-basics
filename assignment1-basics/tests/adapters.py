@@ -423,7 +423,57 @@ def run_transformer_lm(
         Float[Tensor, "batch_size sequence_length vocab_size"]: Tensor with the predicted unnormalized
         next-word distribution for each token.
     """
-    raise NotImplementedError
+    from cs336_basics.transformer_lm import TransformerLM
+    # 1. 实例化 TransformerLM，自动匹配与输入相同的设备
+    # 注意权重往往是 float32 或 bfloat16，从 weights 取一个张量的 dtype 即可
+    sample_weight = next(iter(weights.values()))
+    target_device = in_indices.device
+    target_dtype = sample_weight.dtype
+
+    model = TransformerLM(
+        vocab_size=vocab_size,
+        context_length=context_length,
+        d_model=d_model,
+        num_layers=num_layers,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        rope_theta=rope_theta,
+        device=target_device,
+        dtype=target_dtype,
+    )
+
+    # 2. 处理权重键值（如果还保留了融合版 qkv_project，可以在此自动拼接适配）
+    adapted_weights = dict(weights)
+    model_keys = set(model.state_dict().keys())
+
+    # 兼容检查：如果模型内部是 qkv_project 而输入是分开的权重
+    if any("qkv_project" in k for k in model_keys):
+        for i in range(num_layers):
+            prefix = f"layers.{i}.attn."
+            q = adapted_weights.pop(f"{prefix}q_proj.weight")
+            k = adapted_weights.pop(f"{prefix}k_proj.weight")
+            v = adapted_weights.pop(f"{prefix}v_proj.weight")
+            adapted_weights[f"{prefix}qkv_project.weight"] = torch.cat([
+                                                                       q, k, v], dim=0)
+
+            if f"{prefix}output_proj.weight" in adapted_weights:
+                adapted_weights[f"{prefix}out_proj.weight"] = adapted_weights.pop(
+                    f"{prefix}output_proj.weight"
+                )
+
+    # 3. 对齐设备与类型并加载
+    matched_weights = {
+        k: v.to(device=target_device, dtype=target_dtype)
+        for k, v in adapted_weights.items()
+    }
+    model.load_state_dict(matched_weights)
+
+    # 4. 评估模式推理
+    model.eval()
+    with torch.no_grad():
+        logits = model(in_indices)
+
+    return logits
 
 
 def run_rmsnorm(
