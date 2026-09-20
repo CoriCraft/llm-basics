@@ -17,7 +17,6 @@ class TransformerBlock(nn.Module):
         dtype: torch.dtype | None = None,
     ):
         super().__init__()
-        # 1. 规范做法：__init__ 接收 device/dtype，透传给各个子模块
         factory_kwargs = {"device": device, "dtype": dtype}
 
         # 注意：Attention 前和 FFN 前需要两个独立的 Norm 层
@@ -28,7 +27,7 @@ class TransformerBlock(nn.Module):
             use_rope=True,
             theta=theta,
             max_seq_len=max_seq_len,
-            device=device
+            **factory_kwargs
         )
         self.ln2 = RMSNorm(d_model, **factory_kwargs)
         self.ffn = SwiGLU(d_model, d_ff, **factory_kwargs)

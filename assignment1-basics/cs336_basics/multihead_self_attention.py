@@ -27,11 +27,10 @@ class MultiheadSelfAttention(nn.Module):
 
         factory_kwargs = {"device": device, "dtype": dtype}
 
-        # 命名与测试字典保持严格一致
         self.q_proj = Linear(d_model, d_model, **factory_kwargs)
         self.k_proj = Linear(d_model, d_model, **factory_kwargs)
         self.v_proj = Linear(d_model, d_model, **factory_kwargs)
-        self.output_proj = Linear(d_model, d_model, **factory_kwargs)
+        self.o_proj = Linear(d_model, d_model, **factory_kwargs)
 
         if self.use_rope:
             self.rope = RotaryPositionalEmbedding(
@@ -68,6 +67,7 @@ class MultiheadSelfAttention(nn.Module):
         )
 
         result = scaled_dot_product_attention(q, k, v, mask=causal_mask)
-        result = result.transpose(-3, -2).contiguous().view(*batch_dims, seq_len, self.d_model)
+        result = result.transpose(-3, -2).contiguous().view(*
+                                                            batch_dims, seq_len, self.d_model)
 
-        return self.output_proj(result)
+        return self.o_proj(result)
