@@ -12,13 +12,7 @@ class SwiGLU(nn.Module):
         self.w3 = Linear(d_model, d_ff, device=device, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        w1_x = einx.dot(
-            "d_ff d_model , ... d_model -> ... d_ff", self.w1.weight, x)
-        silu = einx.multiply(
-            "... d_ff, ... d_ff -> ... d_ff", torch.sigmoid(w1_x), w1_x)
-        w3_x = einx.dot(
-            "d_ff d_model , ... d_model -> ... d_ff", self.w3.weight, x)
-        mul = einx.multiply("... d_ff, ... d_ff -> ... d_ff", silu, w3_x)
-        result = einx.dot(
-            "d_model d_ff, ... d_ff -> ... d_model", self.w2.weight, mul)
-        return result
+        w1_x = self.w1(x)
+        silu = torch.sigmoid(w1_x) * w1_x
+        w3_x = self.w3(x)
+        return self.w2(silu * w3_x)
