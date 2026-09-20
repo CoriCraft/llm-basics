@@ -313,7 +313,6 @@ def run_transformer_block(
         running the Transformer block on the input features while using RoPE.
     """
     from cs336_basics.transformer_block import TransformerBlock
-    # 1. 实例化 TransformerBlock，直接指定与输入相同的 device 和 dtype
     block = TransformerBlock(
         d_model=d_model,
         num_heads=num_heads,
@@ -325,28 +324,11 @@ def run_transformer_block(
     )
 
     target_weights = dict(weights)
-
-    # 2. 将 q_proj, k_proj, v_proj 沿第 0 维拼接为你的 qkv_project.weight
-    # 标准 PyTorch Linear 权重形状为 (out_features, in_features)
-    # 拼接后形状变为 (3 * d_model, d_model)
-    q = target_weights.pop("attn.q_proj.weight")
-    k = target_weights.pop("attn.k_proj.weight")
-    v = target_weights.pop("attn.v_proj.weight")
-    target_weights["attn.qkv_project.weight"] = torch.cat([q, k, v], dim=0)
-
-    # 3. 将 output_proj 改名对齐为你的 out_proj
-    target_weights["attn.out_proj.weight"] = target_weights.pop(
+    target_weights["attn.o_proj.weight"] = target_weights.pop(
         "attn.output_proj.weight"
     )
+    block.load_state_dict(target_weights)
 
-    # 4. 统一搬移到与 in_features 一致的 device 和 dtype 并加载
-    matched_weights = {
-        k: v.to(device=in_features.device, dtype=in_features.dtype)
-        for k, v in target_weights.items()
-    }
-    block.load_state_dict(matched_weights)
-
-    # 5. 执行推理
     block.eval()
     with torch.no_grad():
         return block(in_features)

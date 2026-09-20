@@ -33,7 +33,6 @@ class TransformerBlock(nn.Module):
         self.ffn = SwiGLU(d_model, d_ff, **factory_kwargs)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # 直接使用 self.xxx 调用子模块，保持原有权重与计算图
         # Pre-LN MHSA + 残差连接
         x = x + self.attn(self.ln1(x))
         # Pre-LN SwiGLU + 残差连接
