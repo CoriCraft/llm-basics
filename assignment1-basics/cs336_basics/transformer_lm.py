@@ -46,7 +46,6 @@ class TransformerLM(nn.Module):
             for _ in range(num_layers)
         ])
         self.ln_final = RMSNorm(d_model, eps=eps, **factory_kwargs)
-        # 注意输入是 d_model，输出是 vocab_size
         self.lm_head = Linear(d_model, vocab_size, **factory_kwargs)
 
     def forward(
