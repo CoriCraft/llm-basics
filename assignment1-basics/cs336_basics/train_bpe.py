@@ -1,12 +1,23 @@
 from collections import defaultdict
 import os
+import time
 import regex
+
+
+def _rss_mb() -> float:
+    """Return this process' resident memory in MiB when psutil is available."""
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    except ImportError:
+        return 0.0
 
 
 def train_bpe(
     input_path: str | os.PathLike,
     vocab_size: int,
-    special_tokens: list[str]
+    special_tokens: list[str],
+    progress_every: int = 100,
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     if vocab_size < 256 + len(special_tokens):
         raise ValueError("vocab_size is too small!")
@@ -48,6 +59,7 @@ def train_bpe(
             pair_to_words[pair].add(word)
 
     # 4. 执行合并循环
+    started_at = time.monotonic()
     while len(vocab) < vocab_size:
         if not pair_counts:
             break
@@ -94,5 +106,14 @@ def train_bpe(
                 p = (new_word[i], new_word[i + 1])
                 pair_counts[p] += count
                 pair_to_words[p].add(new_word)
+
+        if progress_every > 0 and (len(merges) == 1 or len(merges) % progress_every == 0):
+            elapsed = max(time.monotonic() - started_at, 1e-6)
+            print(
+                f"[train_bpe] vocab={len(vocab)}/{vocab_size} "
+                f"merges={len(merges)} speed={len(merges) / elapsed:.2f} merges/s "
+                f"rss={_rss_mb():,.1f} MiB",
+                flush=True,
+            )
 
     return vocab, merges

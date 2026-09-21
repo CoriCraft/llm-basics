@@ -8,42 +8,30 @@ def get_batch(
     context_length: int,
     device: str | torch.device,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """从词元序列中随机采样一个批次的输入与其对应的下一个词元目标。
-
-    参数:
-        x: 包含一维词元 ID 的 NumPy 数组 (或 np.memmap)。
-        batch_size: 批次大小 (B)。
-        context_length: 上下文序列长度 (m)。
-        device: PyTorch 设备字符串 (如 'cpu', 'cuda:0', 'mps') 或 torch.device 实例。
-
-    返回:
-        (inputs, targets):
-            - inputs: 形状为 (batch_size, context_length) 的 torch.LongTensor，位于指定设备。
-            - targets: 形状为 (batch_size, context_length) 的 torch.LongTensor，位于指定设备。
-    """
+    """从词元序列中随机采样一个批次的输入与其对应的下一个词元目标。"""
     n = len(x)
+    total_len = context_length + 1
 
-    # 任何起始索引 i 必须满足：i + context_length < n (以保证 target 能取到第 i + context_length 项)
-    # 即合法的起始索引范围为 [0, n - context_length - 1]
-    max_start_idx = n - context_length
-    if max_start_idx <= 0:
+    if n < total_len:
         raise ValueError(
-            f"数据集长度 ({n}) 必须大于 context_length ({context_length})"
+            f"数据集长度 ({n}) 必须大于等于 context_length + 1 ({total_len})"
         )
 
-    # 随机生成 batch_size 个起始索引
-    start_indices = np.random.randint(0, max_start_idx, size=batch_size)
+    # 1. 安全边界：起始点最大只能取到 n - total_len
+    # randint(0, high) 生成区间为 [0, high - 1]
+    start_indices = np.random.randint(0, n - context_length, size=batch_size)
 
-    # 提取切片：输入为 x[i : i + context_length]，目标为 x[i + 1 : i + context_length + 1]
-    # 使用 np.stack 组装为 (batch_size, context_length) 的 NumPy 数组
-    inputs_np = np.stack([x[i : i + context_length] for i in start_indices])
-    targets_np = np.stack(
-        [x[i + 1 : i + 1 + context_length] for i in start_indices]
+    # 2. 优化 IO：只切片一次 (长度为 context_length + 1)，减少一半的 memmap 缺页中断
+    chunk = np.stack([x[i : i + total_len] for i in start_indices])
+
+    # 3. 转成 PyTorch Tensor 并直接送上 GPU
+    # 注意：如果原本数据是 uint32，NumPy 转 int64 很快
+    chunk_tensor = torch.from_numpy(chunk.astype(np.int64)).to(
+        device, non_blocking=True
     )
 
-    # 转换为 PyTorch 张量并转移到指定设备
-    # 注意：确保张量类型为 long (int64)，以兼容嵌入层 (Embedding) 与 CrossEntropyLoss
-    inputs = torch.from_numpy(inputs_np.astype(np.int64)).to(device)
-    targets = torch.from_numpy(targets_np.astype(np.int64)).to(device)
+    # 4. 在 GPU 显存内切出 inputs 和 targets（零拷贝，秒级完成）
+    inputs = chunk_tensor[:, :-1].contiguous()
+    targets = chunk_tensor[:, 1:].contiguous()
 
     return inputs, targets

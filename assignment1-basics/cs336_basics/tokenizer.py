@@ -1,5 +1,4 @@
 from typing import Iterable, Iterator
-import json
 import regex
 
 
